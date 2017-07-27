@@ -8,5 +8,6 @@ here's a couple search options, aside from GEO:
 * [EBI](https://www.ebi.ac.uk/)
   - Positives: Better search functionality than GEO 
   - Example: ["T cell ATAC data"](https://www.ebi.ac.uk/ebisearch/search.ebi?db=nucleotideSequences&query=T%20cell%20ATAC&requestFrom=searchBox)
-
+* [Illumina Basespace](https://basespace.illumina.com/home/index)
+  - Positives: Easy download via `basemount`
 
