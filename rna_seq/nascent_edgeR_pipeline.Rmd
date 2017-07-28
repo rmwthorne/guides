@@ -1,27 +1,26 @@
 ---
-title: "nascent_siMLL_star"
+title: "RNA-seq Pipeline"
+author: "Ross Thorne"
 output: html_notebook
 ---
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).
+This is an example RNA-seq analysis, for instruction. It is a simple expriment,
+with two conditions: control (SIMM) and treatment (SIMA6). Each condition has
+3 replicates.
 
 
 ```{r setup}
-# Set knitr options
-knitr::opts_knit$set(
-  root.dir = '/Users/rthorne/Github/analysis-workflows/GeneRegulatoryNetwork')
-knitr::opts_chunk$set(
-  echo = TRUE, warning = TRUE, message = TRUE, 
-  fig.align = "center", fig.width = 9)
-
-library(pacman)
-p_load(tidyverse, edgeR, GenomicFeatures)
-
+library(pacman) # Easy package management
+pacman::p_load(tidyverse, edgeR, GenomicFeatures)
 ```
 
-Gather the data to build the DGEList object.
 
-```{r import}
+## Feature Counts Import
+
+Gather the data to build the DGEList object. The counts file was produced using 
+the `featurecounts` command from the `subread` package.
+
+```{r import, tidy = T, results="hold"}
 # Import the feature counts, check dataframe size
 features <- read_tsv("data/nascent_rnaseq/SIMA6/counts/counts_hg19.txt", comment = "#")
 dim(features)
@@ -42,14 +41,21 @@ colnames(features)
 # Make a grouping factor
 group <- factor(c(1,1,1,2,2,2))
 # Make a counts matrix with gene names as row names
-counts <- features[7:12] %>% as.matrix
-rownames(counts) <- features$Geneid
+features %>%
+  column_to_rownames("Geneid") %>%
+  .[6:11] %>%
+  as.matrix() ->
+  counts
 
 # Construct the DGEList
 dgelist <- DGEList(counts = counts, group = group, genes = features[1:6])
 ```
 
-Filtering:
+## Filtering
+
+Removing genes with less than 1 count per million appears to be the standard
+for filtering out "lowly expressed genes". We also remove genes for which there
+are no reads for one or more replicates.
 
 ```{r filtering}
 cpm <- cpm(dgelist)
@@ -64,7 +70,7 @@ dgelist$samples$lib.size <- colSums(dgelist$counts)
 dim(dgelist)
 ```
 
-Normalisation:
+## Normalisation
 
 ```{r normalise}
 # Normalise for RNA composition
@@ -72,7 +78,7 @@ dgelist.norm <- calcNormFactors(dgelist)
 design <- model.matrix( ~ group)
 ```
 
-Estimate dispersion:
+## Estimate dispersion
 
 ```{r dispersion}
 set.d <- estimateGLMCommonDisp(dgelist.norm, design, verbose = T)
@@ -85,7 +91,9 @@ testglm <- glmLRT(fit, coef=2)
 len.fdr <- length(which(topTags(testglm, n=nrow(dgelist.norm))[[1]][,"FDR"]<0.05))
 ```
 
-Reattach CPM values for each sample:
+## Include CPMC
+
+Reattach Counts per Million (CPM) values for each sample.
 
 ```{r}
 counts_cpm <- dgelist.norm %>% cpm() %>%
@@ -93,8 +101,9 @@ counts_cpm <- dgelist.norm %>% cpm() %>%
   mutate(Geneid = rownames(dgelist.norm))
 ```
 
+## Differentially Expressed Genes
 
-Extract the top DE tags
+Extract the top DE tags.
 
 ```{r export_results}
 top.tags <- topTags(testglm, n = len.fdr)$table %>% 
