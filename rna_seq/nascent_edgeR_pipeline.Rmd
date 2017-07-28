@@ -1,0 +1,113 @@
+---
+title: "nascent_siMLL_star"
+output: html_notebook
+---
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).
+
+
+```{r setup}
+# Set knitr options
+knitr::opts_knit$set(
+  root.dir = '/Users/rthorne/Github/analysis-workflows/GeneRegulatoryNetwork')
+knitr::opts_chunk$set(
+  echo = TRUE, warning = TRUE, message = TRUE, 
+  fig.align = "center", fig.width = 9)
+
+library(pacman)
+p_load(tidyverse, edgeR, GenomicFeatures)
+
+```
+
+Gather the data to build the DGEList object.
+
+```{r import}
+# Import the feature counts, check dataframe size
+features <- read_tsv("data/nascent_rnaseq/SIMA6/counts/counts_hg19.txt", comment = "#")
+dim(features)
+
+# Set sensible sample names
+names(features)[7:12] <- c("SIMA6_1", "SIMA6_2", "SIMA6_3", "SIMM_1", "SIMM_2", "SIMM_3")
+# Order the columns so that control appears first - otherwise upregulation
+# will look like downregulation!
+colnames(features)
+features %>%
+  dplyr::select(
+    Geneid:Length, 
+    starts_with("SIMM"), 
+    starts_with("SIMA6")) ->
+  features
+colnames(features)
+
+# Make a grouping factor
+group <- factor(c(1,1,1,2,2,2))
+# Make a counts matrix with gene names as row names
+counts <- features[7:12] %>% as.matrix
+rownames(counts) <- features$Geneid
+
+# Construct the DGEList
+dgelist <- DGEList(counts = counts, group = group, genes = features[1:6])
+```
+
+Filtering:
+
+```{r filtering}
+cpm <- cpm(dgelist)
+# Filter out genes that have less than 1 cpm per sample group
+# Additionally, there should be 'expression' in at least 3 libraries
+cpm.filter <- rowSums(cpm > 1) >= min(table(group))
+dgelist <- dgelist[cpm.filter, ]
+
+# Recalculate library size for the filtered counts
+dgelist$samples$lib.size <- colSums(dgelist$counts)
+# Check the dimensions of filtered list
+dim(dgelist)
+```
+
+Normalisation:
+
+```{r normalise}
+# Normalise for RNA composition
+dgelist.norm <- calcNormFactors(dgelist)
+design <- model.matrix( ~ group)
+```
+
+Estimate dispersion:
+
+```{r dispersion}
+set.d <- estimateGLMCommonDisp(dgelist.norm, design, verbose = T)
+set.d <- estimateGLMTrendedDisp(set.d, design)
+set.d <- estimateGLMTagwiseDisp(set.d, design)
+
+# Fit the model
+fit <- glmFit(set.d, design)
+testglm <- glmLRT(fit, coef=2)
+len.fdr <- length(which(topTags(testglm, n=nrow(dgelist.norm))[[1]][,"FDR"]<0.05))
+```
+
+Reattach CPM values for each sample:
+
+```{r}
+counts_cpm <- dgelist.norm %>% cpm() %>%
+  as_data_frame() %>%
+  mutate(Geneid = rownames(dgelist.norm))
+```
+
+
+Extract the top DE tags
+
+```{r export_results}
+top.tags <- topTags(testglm, n = len.fdr)$table %>% 
+  left_join(., y = counts_cpm, by = "Geneid")
+all.tags <- topTags(testglm, n = nrow(dgelist.norm))$table %>% 
+  left_join(., y = counts_cpm, by = "Geneid")
+
+top.tags %>%
+  dplyr::select(Geneid, SIMM_1:SIMA6_3, Length:FDR) %>%
+  write_tsv(path = "output/nascent/SIMA6/SIMA6_hg19_ref_top.txt")
+
+all.tags %>%
+  dplyr::select(Geneid, SIMM_1:SIMA6_3, Length:FDR) %>%
+  write_tsv(path = "output/nascent/SIMA6/SIMA6_hg19_ref_all.txt")
+
+```
