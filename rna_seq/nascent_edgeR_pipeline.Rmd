@@ -4,6 +4,8 @@ author: "Ross Thorne"
 output: html_notebook
 ---
 
+# RNA-seq Pipeline
+
 This is an example RNA-seq analysis, for instruction. It is a simple expriment,
 with two conditions: control (SIMM) and treatment (SIMA6). Each condition has
 3 replicates.
